@@ -110,8 +110,8 @@ const inode_s default_inode = {
     .s_in_pointer = 0};
 
 const dir_e default_dir = {
-    "",
-    {.mode = 0,
+    .filename = "",
+    .inode = {.mode = 0,
      .link_cnt = 0,
      .uid = -1,
      .gid = 0,
@@ -119,10 +119,23 @@ const dir_e default_dir = {
      .d_pointers = 0,
      .s_in_pointer = 0}};
 
+const fdt_entry default_fdt_entry = {
+    .fd = -1,
+    .inode = {
+        .mode = 0,
+        .link_cnt = 0,
+        .uid = -1,
+        .gid = 0,
+        .size = 0,
+        .d_pointers = 0,
+        .s_in_pointer = 0}
+};
+
 inode_t inode_table;
 super_block sb;
 fbm bit_map; // map of free data blocks
 int num_entries = 0;
+int dir_index = 0;
 
 //------------------------------- Helpers -------------------------------//
 
@@ -138,7 +151,7 @@ void init_open_fd_table()
     fdt_entry table[FD_TABLE_SIZE] = {}; // will initialize values to 0
     for (int i = 0; 0 < FD_TABLE_SIZE; i++)
     {
-        table[i] = (fdt_entry){.fd = -1, .inode = default_inode};
+        table[i] = default_fdt_entry;
     }
     open_fd_table.table = table;
 }
@@ -305,6 +318,24 @@ int create_fd_entry(inode_s node)
     return new_entry.fd;
 }
 
+int delete_fd_entry(int node_id)
+{
+    for (int i = 0; i < FD_TABLE_SIZE; i++)
+    {
+        fdt_entry entry = open_fd_table.table[i];
+        if (entry.inode.gid == node_id)
+        {
+            if (open_fd_table.earliest_available > i) {
+                open_fd_table.earliest_available = i;
+            }
+            entry = default_fdt_entry;
+            return 0;
+        }
+    }
+    perror("File descriptor for node does not exist.");
+    return -1;
+}
+
 //------------------------------- Api Methods -------------------------------//
 
 void mksfs(int fresh)
@@ -322,12 +353,37 @@ void mksfs(int fresh)
 
 int sfs_getnextfilename(char *fname)
 {
+    if (dir_index == -1)
+    {
+        perror("No more files in directory.");
+        return -1;
+    }
+    strcpy(fname, dir_cache[dir_index].filename);
+    for (int i = dir_index + 1; i < MAX_DIRECTORIES; i++)
+    {
+        dir_e entry = dir_cache[i];
+        if (entry.inode.uid != -1)
+        {
+            dir_index = i;
+            return 1;
+        }
+    }
+    dir_index = -1; // if gets to here no more entries
     return 0;
 }
 
 int sfs_getfilesize(const char *path)
 {
-    return 0;
+    for (int i = 0; i < MAX_DIRECTORIES; i++)
+    {
+        dir_e entry = dir_cache[i];
+        if (strcmp(path, entry.filename) == 0)
+        {
+            return entry.inode.size;
+        }
+    }
+    perror("File not found");
+    return -1;
 }
 
 int sfs_fopen(char *name)
@@ -338,13 +394,17 @@ int sfs_fopen(char *name)
     if (create_file(name, new_node) == -1 || (fd = create_fd_entry(new_node)) == -1)
     {
         perror("SFS Failed to open file.");
+        return -1;
+    }
+    if (dir_index == -1)
+    { // send dir_entry to this entry
     }
     return fd;
 }
 
 int sfs_fclose(int fileID)
 {
-    return 0;
+    return delete_fd_entry(fileID);
 }
 
 int sfs_fwrite(int fileID, char *buf, int length)

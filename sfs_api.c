@@ -120,9 +120,13 @@ super_block sb;
 fbm bit_map; // map of free data blocks
 int num_entries = 0;
 int dir_index = 0;
-int blocks_written = 0;
 
 //------------------------------- Helpers -------------------------------//
+
+void print(char *message)
+{
+    printf("%s\n", message);
+}
 
 void init_free_bit_map()
 {
@@ -196,7 +200,7 @@ int add_mapping(dir_e entry)
 {
     if (num_entries > MAX_DIRECTORIES)
     {
-        perror("File system full.");
+        print("File system full.");
         return -1;
     }
     add_mapping_to_super_block(entry);
@@ -212,7 +216,7 @@ int remove_mapping(dir_e entry)
 {
     if (num_entries == 0)
     {
-        perror("File system empty. Nothing to remove.");
+        print("File system empty. Nothing to remove.");
         return -1;
     }
     remove_mapping_from_super_block(entry);
@@ -239,15 +243,22 @@ void init_inode_table()
 
 int create_inode_entry(inode_s new_node)
 {
+    if (inode_table.length == MAX_DIRECTORIES)
+    {
+        print("Cannot add anymore inodes to the table");
+        return -1;
+    }
     for (int i = 0; i < MAX_DIRECTORIES; i++)
     {
         if (inode_table.inodes[i].uid == -1)
         { // if default then replace
             inode_table.inodes[i] = new_node;
+            inode_table.free_inodes--;
+            inode_table.length++;
             return 1;
         }
     }
-    return 0;
+    return -1;
 }
 
 inode_s remove_inode(int uid)
@@ -255,7 +266,7 @@ inode_s remove_inode(int uid)
     inode_s node;
     if (inode_table.free_inodes == MAX_DIRECTORIES)
     {
-        perror("No inodes to remove.");
+        print("No inodes to remove.");
         return default_inode;
     }
     for (int i = 0; i < MAX_DIRECTORIES; i++)
@@ -263,18 +274,20 @@ inode_s remove_inode(int uid)
         node = inode_table.inodes[i];
         if (node.uid == uid)
         {
-            node = default_inode;
-            break;
+            inode_table.inodes[i] = default_inode;
+            inode_table.length--;
+            inode_table.free_inodes++;
+            return node;
         }
     }
-    return node;
+    return default_inode;
 }
 
 inode_s init_inode()
 {
     if (inode_table.free_inodes == 0)
     {
-        perror("No remaining space in file system.");
+        print("No remaining space in file system.");
         return default_inode;
     }
     inode_s new_node = default_inode;
@@ -327,7 +340,7 @@ inode_s delete_inode(int uid)
     int table_length = inode_table.length;
     if (table_length == 0)
     {
-        perror("No inodes to delete");
+        print("No inodes to delete");
     }
 
     int node_index;
@@ -341,7 +354,7 @@ inode_s delete_inode(int uid)
         }
         return curr;
     }
-    perror("Inode not found");
+    print("Inode not found");
     return default_inode;
 }
 
@@ -349,7 +362,7 @@ int does_file_exist(char *name)
 {
     if (dir_cache == NULL)
     {
-        perror("Directory cache not initialized. Please set.");
+        print("Directory cache not initialized. Please set.");
         return -1;
     }
     for (int i = 0; i < MAX_DIRECTORIES; i++)
@@ -366,13 +379,13 @@ int create_file(char *name, inode_s new_node)
 {
     if (does_file_exist(name))
     {
-        perror("File with same name already exists");
+        print("File with same name already exists");
         return 1;
     }
 
     if (strlen(name) > MAX_FILE_NAME_LENGTH)
     {
-        perror("File name too long");
+        print("File name too long");
         return -1;
     }
 
@@ -396,23 +409,23 @@ int does_fd_exist(int fd)
     return false;
 }
 
-fdt_entry get_fd_entry(int fd)
+fdt_entry *get_fd_entry(int fd)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
     {
         if (open_fd_table.table[i].fd == fd)
         {
-            return open_fd_table.table[i];
+            return &open_fd_table.table[i];
         }
     }
-    return default_fdt_entry;
+    return &default_fdt_entry;
 }
 
 int create_fd_entry(inode_s node)
 {
     if (open_fd_table.earliest_available > FD_TABLE_SIZE)
     {
-        perror("Max number of open file descriptors reached. Please close one in order to continue.");
+        print("Max number of open file descriptors reached. Please close one in order to continue.");
         return -1;
     }
     fdt_entry new_entry;
@@ -442,26 +455,26 @@ int delete_fd_entry(int node_id)
             {
                 open_fd_table.earliest_available = i;
             }
-            entry = default_fdt_entry;
+            open_fd_table.table[i] = default_fdt_entry;
             return 0;
         }
     }
-    perror("File descriptor for node does not exist.");
+    print("File descriptor for node does not exist.");
     return -1;
 }
 
-int *allocate_blocks(int bytes)
+int *allocate_blocks(int bytes, int *blocks_written)
 {
     int blocks_needed = bytes / BLOCK_SIZE + (bytes % BLOCK_SIZE != 0); // round up in case of imperfect division
     if (blocks_needed > NUM_POINTERS)
     {
-        perror("Blocks needed > 13");
+        print("Blocks needed > 13");
         return NULL;
     }
     int blocks_available = get_blocks_available();
     if (blocks_needed > blocks_available)
     {
-        perror("Do not have enough blocks left to support allocation.");
+        print("Do not have enough blocks left to support allocation.");
         return NULL;
     }
     int *blocks_allocated = (int *)malloc(blocks_needed);
@@ -475,7 +488,51 @@ int *allocate_blocks(int bytes)
             bit_map.map[i] = 1;
         }
     }
-    blocks_written = blocks_needed;
+    *blocks_written = blocks_needed;
+    return blocks_allocated;
+}
+
+int count_num_blocks(inode_s node)
+{
+    int counter = 0;
+    for (int i = 0; i < NUM_POINTERS; i++)
+    {
+        if (i == NUM_POINTERS - 1)
+        {
+            if (node.in_pointer != -1)
+            {
+                counter++;
+                break;
+            }
+            if (node.d_pointer[i] != -1)
+            {
+                counter++;
+            }
+        }
+    }
+    return counter;
+}
+
+int *get_blocks(inode_s node, int *num_blocks)
+{
+    int counter = count_num_blocks(node);
+    int *blocks_allocated = (int *)malloc(counter);
+    for (int i = 0; i < NUM_POINTERS; i++)
+    {
+        if (i == NUM_POINTERS - 1)
+        {
+            if (node.in_pointer != -1)
+            {
+                blocks_allocated[i] = node.in_pointer;
+                break;
+            }
+            if (node.d_pointer[i] != -1)
+            {
+                blocks_allocated[i] = node.d_pointer[i];
+            }
+        }
+    }
+    *num_blocks = counter;
     return blocks_allocated;
 }
 
@@ -486,10 +543,12 @@ int release_blocks(int *blocks, int size)
         int block = blocks[i];
         if (block < 0)
         {
-            perror("Unexpected block");
+            print("Unexpected block");
             return -1;
         }
         bit_map.map[blocks[i]] = 0;
+
+        write_blocks(block, 1, 0); // fix
     }
     return 1;
 }
@@ -518,7 +577,7 @@ int sfs_getnextfilename(char *fname)
 {
     if (dir_index == -1)
     {
-        perror("No more files in directory.");
+        print("No more files in directory.");
         return -1;
     }
     strcpy(fname, dir_cache[dir_index].filename);
@@ -545,7 +604,7 @@ int sfs_getfilesize(const char *path)
             return entry.inode.size;
         }
     }
-    perror("File not found");
+    print("File not found");
     return -1;
 }
 
@@ -555,13 +614,13 @@ int sfs_fopen(char *name)
     inode_s new_node = init_inode();
     if (new_node.uid == -1)
     { // default inode
-        perror("Probleming initializing inode.");
+        print("Probleming initializing inode.");
         return -1;
     }
     new_node.size = 0; // file size
     if (create_file(name, new_node) == -1 || (fd = create_fd_entry(new_node)) == -1 || create_inode_entry(new_node) == -1)
     {
-        perror("SFS Failed to open file.");
+        print("SFS Failed to open file.");
         return -1;
     }
     if (dir_index == -1)
@@ -577,46 +636,44 @@ int sfs_fclose(int fileID)
 
 int sfs_fwrite(int fileID, char *buf, int length)
 {
-    int node_uid;
-    if ((node_uid = does_fd_exist(fileID)) == -1)
+    fdt_entry *entry;
+    if ((entry = get_fd_entry(fileID))->fd == -1)
     {
-        perror("File entry does not exist. Please consider creating it.");
+        print("File entry does not exist. Please consider creating it.");
         return -1;
     }
-    // inode exists
-    inode_s inode = get_inode(node_uid);
-    if (inode.uid == -1)
-    { // means default inode was returned
-        perror("Inode not found");
-        return -1;
-    }
-    int *blocks = allocate_blocks(sizeof(char) * length);
+    inode_s inode = entry->inode;
+    int blocks_written;
+    int *blocks = allocate_blocks(sizeof(char) * length, &blocks_written);
     if (blocks == NULL)
     {
-        perror("Was unable to allocate blocks for file write");
+        print("Was unable to allocate blocks for file write");
         return -1;
     }
-    for (int i = 0; i < NUM_POINTERS; i++)
-    {
-        int set = 0;
-        for (int j = 0; j < NUM_POINTERS - 1; j++)
-        {
-            if (inode.d_pointer[j] == -1)
-            {
-                inode.d_pointer[j] = blocks[i];
-                set = 1;
-                break;
-            }
-        }
-        if (set)
-        {
-            continue;
-        }
-        if (inode.in_pointer != -1)
-        {
-            inode.in_pointer = blocks[i];
-        }
-    }
+    int counter = 0;
+    entry->inode.d_pointer[0] = blocks[0];
+    sb.root_dir[0].inode = entry->inode; // fix
+    // for (int i = 0; i < NUM_POINTERS && counter != blocks_written; i++)
+    // {
+    //     int set = 0;
+    //     for (int j = 0; j < NUM_POINTERS - 1; j++)
+    //     {
+    //         if (inode.d_pointer[j] == -1)
+    //         {
+    //             inode.d_pointer[j] = blocks[i];
+    //             set = 1;
+    //             break;
+    //         }
+    //     }
+    //     if (set)
+    //     {
+    //         continue;
+    //     }
+    //     if (inode.in_pointer != -1)
+    //     {
+    //         inode.in_pointer = blocks[i];
+    //     }
+    // }
     for (int i = 0; i < blocks_written; i++)
     {
         char *to_write = (char *)malloc(BLOCK_SIZE);
@@ -624,25 +681,40 @@ int sfs_fwrite(int fileID, char *buf, int length)
         // write to memory here
         write_blocks(blocks[i], 1, to_write); // flush to disk
     }
-    blocks_written = 0; // reset
     free(blocks);
-    return 1;
+    entry->offset += blocks_written;
+    return blocks_written * BLOCK_SIZE;
 }
 
 int sfs_fread(int fileID, char *buf, int length)
 {
-    return 0;
+    fdt_entry *entry;
+    if ((entry = get_fd_entry(fileID))->fd == -1)
+    {
+        print("File entry does not exist. Please consider creating it.");
+        return -1;
+    }
+    inode_s inode = entry->inode;
+    int num_blocks;
+    int *blocks = get_blocks(inode, &num_blocks);
+    int start_block = entry->offset;
+    for (int i = start_block; i < num_blocks + 1; i++)
+    {
+        read_blocks(blocks[i], 1, buf);
+    }
+    free(blocks);
+    return (num_blocks - start_block) * BLOCK_SIZE;
 }
 
 int sfs_fseek(int fileId, int loc)
 {
-    fdt_entry entry = get_fd_entry(fileId);
-    if (entry.inode.uid == -1) // receieved default entry
+    fdt_entry *entry = get_fd_entry(fileId);
+    if (entry->inode.uid == -1) // receieved default entry
     {
-        perror("INode with fileId not found");
+        print("INode with fileId not found");
         return -1;
     }
-    entry.offset = loc;
+    entry->offset = loc;
     return 1;
 }
 
@@ -651,22 +723,33 @@ int sfs_remove(char *file)
     dir_e entry = get_dir_entry(file);
     if (entry.inode.uid == -1)
     { // received default
-        perror("File set for removal not found");
+        print("File set for removal not found");
         return -1;
     }
     int result = remove_mapping(entry);
     inode_s node = remove_inode(entry.inode.uid);
     if (node.uid == -1)
     { // received default inode
-        perror("Unable to delete inode");
+        print("Unable to delete inode");
         return -1;
     }
-    int blocks_to_be_released[NUM_POINTERS];
-    for (int i = 0; i < NUM_POINTERS - 1; i++)
+    int counter = count_num_blocks(node);
+    int *blocks_to_be_released = (int *)malloc(counter * sizeof(int));
+    for (int i = 0; i < NUM_POINTERS; i++)
     {
-        blocks_to_be_released[i] = node.d_pointer[i];
+        if (i == NUM_POINTERS - 1)
+        {
+            if (node.in_pointer != -1)
+            {
+                blocks_to_be_released[i] = node.in_pointer;
+                break;
+            }
+            if (node.d_pointer[i] != -1)
+            {
+                blocks_to_be_released[i] = node.d_pointer[i];
+            }
+        }
     }
-    blocks_to_be_released[NUM_POINTERS - 1] = node.in_pointer;
-    release_blocks(blocks_to_be_released, NUM_POINTERS);
+    release_blocks(blocks_to_be_released, counter);
     return 1;
 }

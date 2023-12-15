@@ -11,7 +11,7 @@
 #define MAX_DIRECTORIES 20
 #define FD_TABLE_SIZE 20
 #define NUM_BLOCKS 1024 // 1 MB file system
-#define NUM_POINTERS 13 // 1 MB file system
+#define NUM_POINTERS 13
 
 void mksfs(int fresh);                             // creates the file system
 int sfs_getnextfilename(char *fname);              // get the name of the next file in directory
@@ -79,8 +79,6 @@ typedef struct on_disk_data_struct
 
 //---------------------------- Memory Structs ----------------------------//
 
-// typedef struct in_memory_data_struct {} in_mem;
-
 typedef struct open_fdt_entry
 {
     inode_s inode;
@@ -96,9 +94,6 @@ typedef struct open_fd_table
 
 fd_table open_fd_table;
 dir_e *dir_cache = NULL;
-// in_mem dir_table;
-// in_mem disk_block_cache;
-// in_mem inode_cache;
 
 //------------------------------- Globals -------------------------------//
 
@@ -120,8 +115,17 @@ super_block sb;
 fbm bit_map; // map of free data blocks
 int num_entries = 0;
 int dir_index = 0;
+char empty_block[BLOCK_SIZE];
 
 //------------------------------- Helpers -------------------------------//
+
+void init_empty_block()
+{
+    for (int i = 0; i < BLOCK_SIZE; i++)
+    {
+        empty_block[i] = '\0';
+    }
+}
 
 void print(char *message)
 {
@@ -300,13 +304,28 @@ dir_e get_dir_entry(char *filename)
 {
     for (int i = 0; i < MAX_DIRECTORIES; i++)
     {
-        dir_e entry = sb.root_dir[i];
+        dir_e entry = dir_cache[i];
         if (entry.filename == filename)
         {
             return entry;
         }
     }
     return default_dir;
+}
+
+int update_dir_entry(inode_s node)
+{
+    for (int i = 0; i < MAX_DIRECTORIES; i++)
+    {
+        dir_e entry = dir_cache[i];
+        if (entry.inode.uid == node.uid)
+        {
+            entry.inode = node;
+            dir_cache[i] = entry;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int get_inode_index(int uid)
@@ -409,16 +428,29 @@ int does_fd_exist(int fd)
     return false;
 }
 
-fdt_entry *get_fd_entry(int fd)
+fdt_entry get_fd_entry(int fd)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
     {
         if (open_fd_table.table[i].fd == fd)
         {
-            return &open_fd_table.table[i];
+            return open_fd_table.table[i];
         }
     }
-    return &default_fdt_entry;
+    return default_fdt_entry;
+}
+
+int update_fd_entry(fdt_entry entry)
+{
+    for (int i = 0; i < FD_TABLE_SIZE; i++)
+    {
+        if (open_fd_table.table[i].fd == entry.fd)
+        {
+            open_fd_table.table[i] = entry;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int create_fd_entry(inode_s node)
@@ -444,12 +476,12 @@ int create_fd_entry(inode_s node)
     return new_entry.fd;
 }
 
-int delete_fd_entry(int node_id)
+int delete_fd_entry(int fd)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
     {
         fdt_entry entry = open_fd_table.table[i];
-        if (entry.inode.gid == node_id)
+        if (entry.fd == fd)
         {
             if (open_fd_table.earliest_available > i)
             {
@@ -504,10 +536,10 @@ int count_num_blocks(inode_s node)
                 counter++;
                 break;
             }
-            if (node.d_pointer[i] != -1)
-            {
-                counter++;
-            }
+        }
+        if (node.d_pointer[i] != -1)
+        {
+            counter++;
         }
     }
     return counter;
@@ -548,7 +580,7 @@ int release_blocks(int *blocks, int size)
         }
         bit_map.map[blocks[i]] = 0;
 
-        write_blocks(block, 1, 0); // fix
+        write_blocks(block, 1, empty_block);
     }
     return 1;
 }
@@ -566,6 +598,7 @@ void mksfs(int fresh)
     {
         init_fresh_disk("fs.sfs", BLOCK_SIZE, NUM_BLOCKS);
     }
+    init_empty_block();
     init_free_bit_map();
     init_inode_table();
     init_open_fd_table();
@@ -636,13 +669,13 @@ int sfs_fclose(int fileID)
 
 int sfs_fwrite(int fileID, char *buf, int length)
 {
-    fdt_entry *entry;
-    if ((entry = get_fd_entry(fileID))->fd == -1)
+    fdt_entry entry;
+    if ((entry = get_fd_entry(fileID)).fd == -1)
     {
         print("File entry does not exist. Please consider creating it.");
         return -1;
     }
-    inode_s inode = entry->inode;
+    inode_s inode = entry.inode;
     int blocks_written;
     int *blocks = allocate_blocks(sizeof(char) * length, &blocks_written);
     if (blocks == NULL)
@@ -651,53 +684,55 @@ int sfs_fwrite(int fileID, char *buf, int length)
         return -1;
     }
     int counter = 0;
-    entry->inode.d_pointer[0] = blocks[0];
-    sb.root_dir[0].inode = entry->inode; // fix
-    // for (int i = 0; i < NUM_POINTERS && counter != blocks_written; i++)
-    // {
-    //     int set = 0;
-    //     for (int j = 0; j < NUM_POINTERS - 1; j++)
-    //     {
-    //         if (inode.d_pointer[j] == -1)
-    //         {
-    //             inode.d_pointer[j] = blocks[i];
-    //             set = 1;
-    //             break;
-    //         }
-    //     }
-    //     if (set)
-    //     {
-    //         continue;
-    //     }
-    //     if (inode.in_pointer != -1)
-    //     {
-    //         inode.in_pointer = blocks[i];
-    //     }
-    // }
+    for (int i = 0; i < NUM_POINTERS && counter != blocks_written; i++)
+    {
+        int set = 0;
+        for (int j = 0; j < NUM_POINTERS - 1; j++)
+        {
+            if (inode.d_pointer[j] == -1)
+            {
+                inode.d_pointer[j] = blocks[i];
+                set = 1;
+                counter++;
+                break;
+            }
+        }
+        if (set)
+        {
+            continue;
+        }
+        if (inode.in_pointer != -1)
+        {
+            inode.in_pointer = blocks[i];
+            counter++;
+        }
+    }
     for (int i = 0; i < blocks_written; i++)
     {
         char *to_write = (char *)malloc(BLOCK_SIZE);
         strncpy(to_write, buf + (i * BLOCK_SIZE), BLOCK_SIZE); // copy a certain substring up to a given length
-        // write to memory here
-        write_blocks(blocks[i], 1, to_write); // flush to disk
+        write_blocks(blocks[i], 1, to_write);                  // flush to disk
     }
     free(blocks);
-    entry->offset += blocks_written;
+    entry.offset = entry.offset + blocks_written;
+    entry.inode = inode;
+    update_fd_entry(entry);
+    update_dir_entry(entry.inode);
     return blocks_written * BLOCK_SIZE;
 }
 
 int sfs_fread(int fileID, char *buf, int length)
 {
-    fdt_entry *entry;
-    if ((entry = get_fd_entry(fileID))->fd == -1)
+    fdt_entry entry;
+    if ((entry = get_fd_entry(fileID)).fd == -1)
     {
         print("File entry does not exist. Please consider creating it.");
         return -1;
     }
-    inode_s inode = entry->inode;
+    inode_s inode = entry.inode;
     int num_blocks;
     int *blocks = get_blocks(inode, &num_blocks);
-    int start_block = entry->offset;
+    int start_block = entry.offset;
     for (int i = start_block; i < num_blocks + 1; i++)
     {
         read_blocks(blocks[i], 1, buf);
@@ -708,13 +743,14 @@ int sfs_fread(int fileID, char *buf, int length)
 
 int sfs_fseek(int fileId, int loc)
 {
-    fdt_entry *entry = get_fd_entry(fileId);
-    if (entry->inode.uid == -1) // receieved default entry
+    fdt_entry entry = get_fd_entry(fileId);
+    if (entry.inode.uid == -1) // receieved default entry
     {
         print("INode with fileId not found");
         return -1;
     }
-    entry->offset = loc;
+    entry.offset = loc;
+    update_fd_entry(entry);
     return 1;
 }
 
@@ -733,7 +769,7 @@ int sfs_remove(char *file)
         print("Unable to delete inode");
         return -1;
     }
-    int counter = count_num_blocks(node);
+    int counter = count_num_blocks(entry.inode);
     int *blocks_to_be_released = (int *)malloc(counter * sizeof(int));
     for (int i = 0; i < NUM_POINTERS; i++)
     {

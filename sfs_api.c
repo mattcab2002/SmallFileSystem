@@ -119,6 +119,9 @@ char empty_block[BLOCK_SIZE];
 
 //------------------------------- Helpers -------------------------------//
 
+/**
+ * Initializes the empty block with null characters.
+ */
 void init_empty_block()
 {
     for (int i = 0; i < BLOCK_SIZE; i++)
@@ -127,11 +130,19 @@ void init_empty_block()
     }
 }
 
+/**
+ * Prints a message to the console.
+ *
+ * @param message The message to be printed.
+ */
 void print(char *message)
 {
     printf("%s\n", message);
 }
 
+/**
+ * Initializes the free bit map.
+ */
 void init_free_bit_map()
 {
     bit_map.earliest_available = 0;
@@ -139,6 +150,11 @@ void init_free_bit_map()
     bit_map.map = map;
 }
 
+/**
+ * Calculates the number of available blocks in the file system.
+ *
+ * @return The number of available blocks.
+ */
 int get_blocks_available()
 {
     int counter = 0;
@@ -152,6 +168,9 @@ int get_blocks_available()
     return counter;
 }
 
+/**
+ * Initializes the open file descriptor table.
+ */
 void init_open_fd_table()
 {
     fdt_entry *table = malloc(FD_TABLE_SIZE * sizeof(fdt_entry)); // will initialize values to 0
@@ -163,6 +182,9 @@ void init_open_fd_table()
     open_fd_table.table = table;
 }
 
+/**
+ * Initializes the super block of the file system.
+ */
 void init_super_block()
 {
     dir_e *dirs = malloc(MAX_DIRECTORIES * sizeof(dir_e));
@@ -177,16 +199,29 @@ void init_super_block()
     sb.root_dir = dirs;
 }
 
+/**
+ * Initializes the directory cache with the root directory.
+ */
 void init_dir_cache()
 {
     dir_cache = sb.root_dir;
 }
 
+/**
+ * Adds a directory entry to the super block.
+ *
+ * @param entry The directory entry to be added.
+ */
 void add_mapping_to_super_block(dir_e entry)
 {
     sb.root_dir[num_entries] = entry;
 }
 
+/**
+ * Removes a directory entry from the super block.
+ *
+ * @param entry The directory entry to be removed.
+ */
 void remove_mapping_from_super_block(dir_e entry)
 {
     for (int i = 0; i < MAX_DIRECTORIES; i++)
@@ -200,6 +235,12 @@ void remove_mapping_from_super_block(dir_e entry)
     }
 }
 
+/**
+ * Adds a directory entry to the super block dir_cache.
+ *
+ * @param entry The directory entry to be added.
+ * @return 1 if the directory entry was successfully added, -1 if the file system is full.
+ */
 int add_mapping(dir_e entry)
 {
     if (num_entries > MAX_DIRECTORIES)
@@ -216,6 +257,12 @@ int add_mapping(dir_e entry)
     return 1;
 }
 
+/**
+ * Removes a directory entry from the super block and dir_cache.
+ *
+ * @param entry The directory entry to be removed.
+ * @return 1 if the directory entry was successfully removed, -1 if the file system is empty.
+ */
 int remove_mapping(dir_e entry)
 {
     if (num_entries == 0)
@@ -232,6 +279,9 @@ int remove_mapping(dir_e entry)
     return 1;
 }
 
+/**
+ * Initializes the inode table.
+ */
 void init_inode_table()
 {
     inode_table.earliest_available = 0;
@@ -245,6 +295,12 @@ void init_inode_table()
     inode_table.inodes = inodes;
 }
 
+/**
+ * Creates a new inode entry in the inode table.
+ *
+ * @param new_node The new inode to be added.
+ * @return 1 if the inode entry was successfully created, -1 if the inode table is full.
+ */
 int create_inode_entry(inode_s new_node)
 {
     if (inode_table.length == MAX_DIRECTORIES)
@@ -265,6 +321,12 @@ int create_inode_entry(inode_s new_node)
     return -1;
 }
 
+/**
+ * Removes an inode from the inode table based on the given uid.
+ *
+ * @param uid The unique identifier of the inode to be removed.
+ * @return The removed inode, or the default inode if no matching inode is found.
+ */
 inode_s remove_inode(int uid)
 {
     inode_s node;
@@ -287,6 +349,11 @@ inode_s remove_inode(int uid)
     return default_inode;
 }
 
+/**
+ * Initializes a new inode with default values and assigns a unique identifier.
+ *
+ * @return The initialized inode.
+ */
 inode_s init_inode()
 {
     if (inode_table.free_inodes == 0)
@@ -300,6 +367,12 @@ inode_s init_inode()
     return new_node;
 }
 
+/**
+ * Retrieves a directory entry based on the given filename.
+ *
+ * @param filename The name of the file to retrieve the directory entry for.
+ * @return The directory entry matching the filename, or the default directory entry if no matching entry is found.
+ */
 dir_e get_dir_entry(char *filename)
 {
     for (int i = 0; i < MAX_DIRECTORIES; i++)
@@ -313,6 +386,12 @@ dir_e get_dir_entry(char *filename)
     return default_dir;
 }
 
+/**
+ * Updates a directory entry with the given inode.
+ *
+ * @param node The inode to update the directory entry with.
+ * @return 1 if the update was successful, 0 otherwise.
+ */
 int update_dir_entry(inode_s node)
 {
     for (int i = 0; i < MAX_DIRECTORIES; i++)
@@ -328,6 +407,11 @@ int update_dir_entry(inode_s node)
     return 0;
 }
 
+/**
+ * Retrieves the index of the inode with the given UID.
+ * @param uid The unique identifier of the inode to retrieve the index for.
+ * @return The index of the inode with the given UID, or -1 if no matching inode is found.
+ */
 int get_inode_index(int uid)
 {
     for (int i = 0; i < inode_table.length; i++)
@@ -341,6 +425,12 @@ int get_inode_index(int uid)
     return -1;
 }
 
+/**
+ * Retrieves the inode with the given UID.
+ *
+ * @param uid The unique identifier of the inode to retrieve.
+ * @return The inode with the given UID, or the default inode if no matching inode is found.
+ */
 inode_s get_inode(int uid)
 {
     int index;
@@ -354,29 +444,12 @@ inode_s get_inode(int uid)
     }
 }
 
-inode_s delete_inode(int uid)
-{
-    int table_length = inode_table.length;
-    if (table_length == 0)
-    {
-        print("No inodes to delete");
-    }
-
-    int node_index;
-    if ((node_index = get_inode_index(uid)) != -1)
-    {
-        inode_s curr = inode_table.inodes[node_index];
-        inode_table.inodes[node_index] = default_inode;
-        if (node_index < inode_table.earliest_available)
-        {
-            inode_table.earliest_available = node_index;
-        }
-        return curr;
-    }
-    print("Inode not found");
-    return default_inode;
-}
-
+/**
+ * Checks if a file with the given name exists in the directory cache.
+ *
+ * @param name The name of the file to check for existence.
+ * @return 1 if the file exists, 0 if it does not.
+ */
 int does_file_exist(char *name)
 {
     if (dir_cache == NULL)
@@ -394,6 +467,13 @@ int does_file_exist(char *name)
     return false;
 }
 
+/**
+ * Creates a directory entry for a file and inode.
+ *
+ * @param name The name of the file to be created.
+ * @param new_node The inode of the new file.
+ * @return 1 if the file is successfully created, -1 if the file already exists, or the file name is too long.
+ */
 int create_file(char *name, inode_s new_node)
 {
     if (does_file_exist(name))
@@ -416,6 +496,12 @@ int create_file(char *name, inode_s new_node)
     return 1;
 }
 
+/**
+ * Checks if a file descriptor exists in the open file descriptor table.
+ *
+ * @param fd The file descriptor to check for existence.
+ * @return The unique identifier of the inode if the file descriptor exists, or 0 if it does not.
+ */
 int does_fd_exist(int fd)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
@@ -428,6 +514,12 @@ int does_fd_exist(int fd)
     return false;
 }
 
+/**
+ * Retrieves the file descriptor table entry for the given file descriptor.
+ *
+ * @param fd The file descriptor to retrieve the entry for.
+ * @return The file descriptor table entry for the given file descriptor.
+ */
 fdt_entry get_fd_entry(int fd)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
@@ -440,6 +532,12 @@ fdt_entry get_fd_entry(int fd)
     return default_fdt_entry;
 }
 
+/**
+ * Updates the file descriptor table entry with the given entry.
+ *
+ * @param entry The file descriptor table entry to update.
+ * @return 1 if the entry is successfully updated, 0 if the entry does not exist in the table.
+ */
 int update_fd_entry(fdt_entry entry)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
@@ -453,6 +551,12 @@ int update_fd_entry(fdt_entry entry)
     return 0;
 }
 
+/**
+ * Creates a new file descriptor table entry for the given inode.
+ *
+ * @param node The inode for which to create the file descriptor table entry.
+ * @return The file descriptor for the newly created entry, or -1 if the maximum number of open file descriptors has been reached.
+ */
 int create_fd_entry(inode_s node)
 {
     if (open_fd_table.earliest_available > FD_TABLE_SIZE)
@@ -476,6 +580,12 @@ int create_fd_entry(inode_s node)
     return new_entry.fd;
 }
 
+/**
+ * Deletes a file descriptor table entry for the given file descriptor.
+ *
+ * @param fd The file descriptor to delete.
+ * @return 0 if the entry is successfully deleted, -1 if the entry does not exist in the table.
+ */
 int delete_fd_entry(int fd)
 {
     for (int i = 0; i < FD_TABLE_SIZE; i++)
@@ -495,6 +605,13 @@ int delete_fd_entry(int fd)
     return -1;
 }
 
+/**
+ * Allocates blocks on disk for a file based on the given number of bytes.
+ *
+ * @param bytes The number of bytes for which to allocate blocks.
+ * @param blocks_written A pointer to an integer where the number of blocks written will be stored.
+ * @return An array of integers representing the allocated blocks, or NULL if allocation is not possible.
+ */
 int *allocate_blocks(int bytes, int *blocks_written)
 {
     int blocks_needed = bytes / BLOCK_SIZE + (bytes % BLOCK_SIZE != 0); // round up in case of imperfect division
@@ -524,6 +641,12 @@ int *allocate_blocks(int bytes, int *blocks_written)
     return blocks_allocated;
 }
 
+/**
+ * Counts the number of blocks allocated to the given inode.
+ *
+ * @param node The inode for which to count the number of blocks.
+ * @return The number of blocks allocated to the inode.
+ */
 int count_num_blocks(inode_s node)
 {
     int counter = 0;
@@ -545,6 +668,13 @@ int count_num_blocks(inode_s node)
     return counter;
 }
 
+/**
+ * Retrieves the blocks allocated to the given inode.
+ *
+ * @param node The inode for which to retrieve the allocated blocks.
+ * @param num_blocks A pointer to an integer where the number of allocated blocks will be stored.
+ * @return An array of integers representing the allocated blocks.
+ */
 int *get_blocks(inode_s node, int *num_blocks)
 {
     int counter = count_num_blocks(node);
@@ -569,6 +699,13 @@ int *get_blocks(inode_s node, int *num_blocks)
     return blocks_allocated;
 }
 
+/**
+ * Releases the blocks provided.
+ *
+ * @param blocks Blocks to be released.
+ * @param size Number of blocks to be released.
+ * @return 1 if release of blocks is successful or -1 otherwise
+ */
 int release_blocks(int *blocks, int size)
 {
     for (int i = 0; i < size; i++)
@@ -588,6 +725,11 @@ int release_blocks(int *blocks, int size)
 
 //------------------------------- Api Methods -------------------------------//
 
+/**
+ * Creates and initializes the Small File System.
+ *
+ * @param fresh Determing if new file system or open existing
+ */
 void mksfs(int fresh)
 {
     srand((unsigned int)(time(0))); // random number generator
@@ -607,6 +749,12 @@ void mksfs(int fresh)
     init_dir_cache();
 }
 
+/**
+ * Reads the next file to the fname input variable.
+ *
+ * @param fname Variable to read to.
+ * @return -1 if not more files 1 otherwise
+ */
 int sfs_getnextfilename(char *fname)
 {
     if (dir_index == -1)
@@ -628,6 +776,12 @@ int sfs_getnextfilename(char *fname)
     return 0;
 }
 
+/**
+ * Retrieves the size of a file in the system if it exists.
+ *
+ * @param path Path of the file
+ * @return Length of the file if found -1 otherwise
+ */
 int sfs_getfilesize(const char *path)
 {
     for (int i = 0; i < MAX_DIRECTORIES; i++)
@@ -642,6 +796,12 @@ int sfs_getfilesize(const char *path)
     return -1;
 }
 
+/**
+ * Creates the file in the file system and "opens" it by setting its read and write pointer.
+ *
+ * @param name Name of the file to create
+ * @return The file descriptor of the file created or -1 if unsuccessful
+ */
 int sfs_fopen(char *name)
 {
     int fd;
@@ -663,11 +823,25 @@ int sfs_fopen(char *name)
     return fd;
 }
 
+/**
+ * "Closes" the file by removing the entry from the FD table.
+ *
+ * @param fileId Id of the file
+ * @return 0 if succesful -1 otherwise
+ */
 int sfs_fclose(int fileID)
 {
     return delete_fd_entry(fileID);
 }
 
+/**
+ * Reads the some or all of the contents of a file into the buffer provided.
+ *
+ * @param fileId Id of the file
+ * @param buf Buffer to read into
+ * @param length Length to read
+ * @return Number of blocks read if succesful -1 otherwise
+ */
 int sfs_fwrite(int fileID, char *buf, int length)
 {
     fdt_entry entry;
@@ -679,6 +853,7 @@ int sfs_fwrite(int fileID, char *buf, int length)
     inode_s inode = entry.inode;
     int blocks_written;
     int *blocks = allocate_blocks(sizeof(char) * length, &blocks_written);
+    inode.size = blocks_written * BLOCK_SIZE;
     if (blocks == NULL)
     {
         print("Was unable to allocate blocks for file write");
@@ -722,6 +897,14 @@ int sfs_fwrite(int fileID, char *buf, int length)
     return blocks_written * BLOCK_SIZE;
 }
 
+/**
+ * Reads the some or all of the contents of a file into the buffer provided.
+ *
+ * @param fileId Id of the file
+ * @param buf Buffer to read into
+ * @param length Length to read
+ * @return Number of blocks read if succesful -1 otherwise
+ */
 int sfs_fread(int fileID, char *buf, int length)
 {
     fdt_entry entry;
@@ -742,6 +925,13 @@ int sfs_fread(int fileID, char *buf, int length)
     return (num_blocks - start_block) * BLOCK_SIZE;
 }
 
+/**
+ * Sets the read and right pointer for a given file.
+ *
+ * @param fileId Id of the file
+ * @param loc New desired pointer location.
+ * @return 0 if succesful -1 otherwise
+ */
 int sfs_fseek(int fileId, int loc)
 {
     fdt_entry entry = get_fd_entry(fileId);
@@ -752,9 +942,15 @@ int sfs_fseek(int fileId, int loc)
     }
     entry.offset = loc;
     update_fd_entry(entry);
-    return 1;
+    return 0;
 }
 
+/**
+ * Removes a file from the file system and reclaims any resources that file may have been using.
+ *
+ * @param Name of the file
+ * @return 0 if succesful -1 otherwise
+ */
 int sfs_remove(char *file)
 {
     dir_e entry = get_dir_entry(file);
@@ -788,5 +984,5 @@ int sfs_remove(char *file)
         }
     }
     release_blocks(blocks_to_be_released, counter);
-    return 1;
+    return 0;
 }

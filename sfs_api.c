@@ -548,8 +548,8 @@ int count_num_blocks(inode_s node)
 int *get_blocks(inode_s node, int *num_blocks)
 {
     int counter = count_num_blocks(node);
-    int *blocks_allocated = (int *)malloc(counter);
-    for (int i = 0; i < NUM_POINTERS; i++)
+    int *blocks_allocated = (int *)malloc(counter * sizeof(int));
+    for (int i = 0; i < NUM_POINTERS && i != counter; i++)
     {
         if (i == NUM_POINTERS - 1)
         {
@@ -558,10 +558,11 @@ int *get_blocks(inode_s node, int *num_blocks)
                 blocks_allocated[i] = node.in_pointer;
                 break;
             }
-            if (node.d_pointer[i] != -1)
-            {
-                blocks_allocated[i] = node.d_pointer[i];
-            }
+        }
+
+        if (node.d_pointer[i] != -1)
+        {
+            blocks_allocated[i] = node.d_pointer[i];
         }
     }
     *num_blocks = counter;
@@ -733,7 +734,7 @@ int sfs_fread(int fileID, char *buf, int length)
     int num_blocks;
     int *blocks = get_blocks(inode, &num_blocks);
     int start_block = entry.offset;
-    for (int i = start_block; i < num_blocks + 1; i++)
+    for (int i = start_block; i < num_blocks; i++)
     {
         read_blocks(blocks[i], 1, buf);
     }
@@ -771,19 +772,19 @@ int sfs_remove(char *file)
     }
     int counter = count_num_blocks(entry.inode);
     int *blocks_to_be_released = (int *)malloc(counter * sizeof(int));
-    for (int i = 0; i < NUM_POINTERS; i++)
+    for (int i = 0; i < NUM_POINTERS || i < counter; i++)
     {
         if (i == NUM_POINTERS - 1)
         {
-            if (node.in_pointer != -1)
+            if (entry.inode.in_pointer != -1)
             {
-                blocks_to_be_released[i] = node.in_pointer;
+                blocks_to_be_released[i] = entry.inode.in_pointer;
                 break;
             }
-            if (node.d_pointer[i] != -1)
-            {
-                blocks_to_be_released[i] = node.d_pointer[i];
-            }
+        }
+        if (entry.inode.d_pointer[i] != -1)
+        {
+            blocks_to_be_released[i] = entry.inode.d_pointer[i];
         }
     }
     release_blocks(blocks_to_be_released, counter);
